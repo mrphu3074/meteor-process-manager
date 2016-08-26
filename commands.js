@@ -3,184 +3,167 @@ var _ = require('lodash');
 var Promise = require('bluebird');
 var pm2 = require('pm2');
 var jsonfile = require('jsonfile');
-var tarGz = require('tar.gz');
-var tar = require('tar-fs');
-var gunzip = require('gunzip-maybe');
 var exec = require('child_process').exec;
+var utils = require('./utils');
+
 
 /**
- * Promise func to execute command
- * @param  {array|string} cmd [description]
+ * Initial config when deploy
+ * @param  {[type]} cli      [description]
+ * @param  {[type]} settings [description]
+ * @param  {[type]} file     [description]
+ * @return {[type]}          [description]
  */
-function execCMD(cmd) {
-	return new Promise(function(resolve, reject) {
-		try {
-			cmd = _.isArray(cmd) ? cmd.join(' ') : cmd;
-			exec(cmd, { maxBuffer: 500 * 1024 }, function(e, stdOut) {
-				if (e) return reject(e);
-				return resolve(stdOut);
-			});
-		} catch (e) {
-			return reject(e);
+function initDeploy(cli, cliOptions, appSettings, file) {
+	var data = {
+		cli: cli,
+		appName: appSettings.name,
+		appVersion: appSettings.version,
+		buildName: utils.getBuildName(appSettings),
+		appSettings: appSettings,
+		getBinaryPath: function() {
+			return file.path;
+		},
+		getAppPath: function() {
+			return cliOptions.buildPath + '/' + utils.getBuildName(appSettings);
 		}
-	});
-}
+	};
 
-/**
- * Promise function to uncompress tarball
- * @param  {string} filePath
- * @param  {string} destPath
- */
-function uncompress(filePath, destPath) {
 	return new Promise(function(resolve, reject) {
-		try {
-			var stream = fs.createReadStream(filePath)
-				.pipe(gunzip())
-				.pipe(tar.extract(destPath));
-
-			stream.on('error', function(e) {
-				reject(e);
-			});
-			stream.on('end', function() {
-				resolve();
-			});
-			stream.on('finish', function() {
-				resolve();
-			});
-		} catch (e) {
-			return reject(e);
-		}
+		return resolve(data);
 	});
 }
 
 /**
- * Move tarball
- * @param  {[type]} app [description]
- * @return {[type]}     [description]
+ * Deploy command
+ * @param  {[type]} config [description]
+ * @return {[type]}        [description]
  */
-function moveTarball(app) {
-	return new Promise(function(resolve, reject) {
-		var src = app.getFileSource();
-		var dest = app.getBinaryPath();
-		try {
-			fs.rename(src, dest, function(err) {
-				if (err) {
-					return reject(err);
-				} else {
-					return resolve(app);
-				}
-			});
-		} catch (e) {
-			return reject(e);
-		}
-	});
-}
-
-/**
- * Task uncompress tarball
- */
-function unCompress(app) {
+function deploy(config) {
 	return new Promise(function(resolve, reject) {
 		try {
-			var src = app.getBinaryPath();
-			var dest = app.config.BUILD_DIR;
-			app.cli.spinner('Uncompessing...');
-			uncompress(src, dest)
-				.then(function() {
-					app.cli.spinner('Uncompessing...Done', true);
-					return resolve(app);
-				})
-				.catch(function(e) {
-					app.cli.spinner('Uncompessing...Failed', true);
-					return reject(e);
-				});
-		} catch (e) {
-			return reject(e);
-		}
-	});
-}
+			var cli  = config.cli;
+			var binaryPath = config.getBinaryPath();
+			var appPath = config.getAppPath();
+			var appSettings = config.appSettings;
 
-function removeBinary(app) {
-	return new Promise(function(resolve, reject) {
-		try {
-			var src = app.getBinaryPath();
-			fs.unlink(src, function(e) {
-				if(e) return reject(e);
-				resolve(app);
-			});
-
-		} catch(e) {
-			reject(e);
-		}
-	});
-}
-
-function renameBundle(app) {
-	return new Promise(function(resolve, reject) {
-		try {
-			var src = app.config.BUILD_DIR + '/bundle';
-			var dest = app.getBuildPath();
-			fs.rename(src, dest, function(err) {
-				if (err) {
-					return reject(err);
-				}
-				return resolve(app);
-			});
-		} catch (e) {
-			return reject(e);
-		}
-	});
-}
-
-/**
- * Install dependencies
- * @param  {[type]} app [description]
- * @return {[type]}     [description]
- */
-function installBundle(app) {
-	return new Promise(function(resolve, reject) {
-		try {
-			var buildPath = app.getBuildPath();
-			var serverPath = buildPath + '/programs/server';
-
-			var installFiber = function() {
+			var uncompress = function() {
 				return new Promise(function(resolve, reject) {
-					execCMD(['cd', serverPath, '&&', 'npm install --silent'])
-						.then(function() { resolve() })
-						.catch(function(e) { reject(e) });
+					try {
+						cli.info('Step 1: Uncompress tarball');
+						cli.spinner('Uncompessing...');
+						utils.uncompress(binaryPath, appPath)
+							.then(function() {
+								cli.spinner('Step 1...Done', true);
+								return resolve(config);
+							})
+							.catch(function(e) {
+								cli.spinner('Step 1...Failed', true);
+								return reject(e);
+							});
+					} catch (e) {
+						return reject(e);
+					}
 				});
 			}
 
-			var removeOldBcrypt = function() {
+			function removeBinary() {
 				return new Promise(function(resolve, reject) {
-					var bcryptPath = serverPath + '/npm/node_modules/meteor/npm-bcrypt/node_modules/bcrypt';
-					execCMD(['rm', '-rf', bcryptPath])
-						.then(function() { resolve() })
-						.catch(function(e) { reject(e) });
+					try {
+						fs.unlink(binaryPath, function(e) {
+							if (e) return reject(e);
+							resolve();
+						});
+					} catch (e) {
+						reject(e);
+					}
 				});
 			}
 
-			var installNewBcrypt = function() {
+			var installDependencies = function() {
 				return new Promise(function(resolve, reject) {
-					var npmBcryptPath = serverPath + '/npm/node_modules/meteor/npm-bcrypt';
-					execCMD(['cd', npmBcryptPath, '&&', 'npm install bcrypt --silent'])
-						.then(function() { resolve() })
-						.catch(function(e) { reject(e) });
+					try {
+						var serverPath = appPath + '/bundle/programs/server';
+
+						var installFiber = function() {
+							return new Promise(function(resolve, reject) {
+								utils.execCMD(['cd', serverPath, '&&', 'npm install --silent'])
+									.then(function() { resolve() })
+									.catch(function(e) { reject(e) });
+							});
+						}
+
+						var removeOldBcrypt = function() {
+							return new Promise(function(resolve, reject) {
+								var bcryptPath = serverPath + '/npm/node_modules/meteor/npm-bcrypt/node_modules/bcrypt';
+								utils.execCMD(['rm', '-rf', bcryptPath])
+									.then(function() { resolve() })
+									.catch(function(e) { reject(e) });
+							});
+						}
+
+						var installNewBcrypt = function() {
+							return new Promise(function(resolve, reject) {
+								var npmBcryptPath = serverPath + '/npm/node_modules/meteor/npm-bcrypt';
+								utils.execCMD(['cd', npmBcryptPath, '&&', 'npm install bcrypt --silent'])
+									.then(function() { resolve() })
+									.catch(function(e) { reject(e) });
+							});
+						}
+
+						cli.info('Step 2: Installation');
+						cli.spinner('Installing...');
+						Promise.resolve(null)
+							.then(installFiber)
+							.then(function() {
+								cli.spinner('Installing...Done', true);
+								resolve();
+							})
+							.catch(function(e) {
+								cli.spinner('Installing...Failed', true);
+								reject(e);
+							});
+					} catch (e) {
+						return reject(e);
+					}
 				});
 			}
 
-			app.cli.spinner('Installing...');
+			var initPm2Config = function() {
+				return new Promise(function(resolve, reject) {
+					cli.info('Step 3: Init config');
+					cli.spinner('Init...');
+
+					var configFile = appPath + '/app.json';
+					var config = utils.getPm2Config(appPath + '/bundle', appSettings);
+					jsonfile.writeFile(configFile, config, { spaces: 2 }, function(err) {
+						if (err) {
+							cli.spinner('Init...Failed', true);
+							return reject(err);
+						} else {
+							cli.spinner('Init...Done', true);
+							return resolve();
+						}
+					});
+				});
+			}
+
+
 			Promise.resolve(null)
-				.then(installFiber)
-				.then(removeOldBcrypt)
-				.then(installNewBcrypt)
+				.then(uncompress)
+				.then(removeBinary)
+				.then(installDependencies)
+				.then(initPm2Config)
+				.then(() => startApp(config))
 				.then(function() {
-					app.cli.spinner('Installing...Done', true);
-					resolve(app);
+					resolve();
 				})
 				.catch(function(e) {
-					app.cli.spinner('Installing...Failed', true);
-					reject(e);
+					reject({
+						name: config.appName,
+						version: config.appVersion,
+						error: e,
+					});
 				});
 		} catch (e) {
 			return reject(e);
@@ -193,13 +176,13 @@ function installBundle(app) {
  * @param  {[type]} app [description]
  * @return {[type]}     [description]
  */
-function startBundle(app) {
+function startApp(app) {
 	return new Promise(function(resolve, reject) {
 		try {
-			var appFile = app.getBuildPath() + '/settings.json';
+			var appFile = app.getAppPath() + '/app.json';
 
 			app.cli.spinner('App starting...');
-			execCMD(['pm2', 'start', appFile])
+			utils.execCMD(['pm2', 'start', appFile])
 				.then(function() {
 					app.cli.spinner('App started', true);
 					resolve(app);
@@ -208,40 +191,6 @@ function startBundle(app) {
 					app.cli.spinner('App starting...Failed', true);
 					reject(e);
 				});
-		} catch (e) {
-			return reject(e);
-		}
-	});
-}
-
-/**
- * Create pm2 settings file
- * @param  {[type]} app [description]
- * @return {[type]}     [description]
- */
-function initSettings(app) {
-	return new Promise(function(resolve, reject) {
-		try {
-			var buildPath = app.getBuildPath();
-			var settingFile = app.getBuildPath() + '/settings.json';
-			var appSettings = app.appSettings;
-			var env = appSettings.env;
-			env.METEOR_SETTINGS = appSettings.settings;
-
-			var settings = {
-				name: appSettings.name,
-				cwd: buildPath,
-				script: 'main.js',
-				env: env
-			};
-
-			jsonfile.writeFile(settingFile, settings, { spaces: 2 }, function(err) {
-				if (err) {
-					return reject(err);
-				} else {
-					return resolve(app);
-				}
-			});
 		} catch (e) {
 			return reject(e);
 		}
@@ -304,7 +253,7 @@ function reconfigure(app) {
 
 			var restartInstance = function() {
 				return new Promise(function(resolve, reject) {
-					execCMD(['pm2', 'start', settingFile])
+					utils.execCMD(['pm2', 'start', settingFile])
 						.then(function() {
 							resolve();
 						})
@@ -336,12 +285,7 @@ function reconfigure(app) {
 }
 
 module.exports = {
-	moveTarball: moveTarball,
-	unCompress: unCompress,
-	renameBundle: renameBundle,
-	removeBinary: removeBinary,
-	installBundle: installBundle,
-	initSettings: initSettings,
-	startBundle: startBundle,
+	initDeploy: initDeploy,
+	deploy: deploy,
 	reconfigure: reconfigure,
 };
