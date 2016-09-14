@@ -4,7 +4,7 @@ import { Application, Request, Response } from 'express';
 var bodyParser = require('body-parser');
 var multer = require('multer');
 var auth = require('basic-auth');
-import { deploy, reconfigure, pm2Command, execp } from './commands';
+import { deploy, reconfigure, instance, execp } from './commands';
 
 interface IRequest extends Request {
   body: any
@@ -73,7 +73,7 @@ export function initial(cli: ICli, option: IAppOption) {
   interface IAppRequest extends Request {
     body: {
       action: 'start' | 'stop' | 'restart',
-      settings: IAppSettings
+      settings: any
     }
   }
 
@@ -91,13 +91,13 @@ export function initial(cli: ICli, option: IAppOption) {
   router.post('/app', function (request: IAppRequest, response: Response) {
     try {
       const action = request.body.action;
-      const appSettings = request.body.settings;
+      const appSettings = JSON.parse(request.body.settings);
 
       switch (action) {
         case 'start':
         case 'stop':
         case 'restart':
-          pm2Command(cli, option, appSettings, action)
+          instance(cli, option, appSettings, action)
             .then(() => {
               response.json({
                 success: true,
@@ -111,6 +111,15 @@ export function initial(cli: ICli, option: IAppOption) {
                 code: 400,
                 msg: 'invalid parameter'
               });
+            });
+          break;
+
+        case 'configure':
+          reconfigure(cli, option, appSettings)
+            .then(() => response.end('ok'))
+            .catch(e => {
+              response.end('failed');
+              console.log(e);
             });
           break;
       }
@@ -159,7 +168,7 @@ export function initial(cli: ICli, option: IAppOption) {
    */
   app.post('/stop', function (req: IRequest, res: Response) {
     var appSettings = JSON.parse(req.body.settings);
-    pm2Command(cli, option, appSettings, 'stop')
+    instance(cli, option, appSettings, 'stop')
       .then(() => {
         res.end('Stop ok');
       })
@@ -177,7 +186,7 @@ export function initial(cli: ICli, option: IAppOption) {
     var appSettings = JSON.parse(req.body.settings);
     var action = req.body.action;
 
-    pm2Command(cli, option, appSettings, action)
+    instance(cli, option, appSettings, action)
       .then(() => {
         res.end(`${action} ok`);
       })

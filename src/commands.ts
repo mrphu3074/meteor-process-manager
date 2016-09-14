@@ -231,7 +231,7 @@ export function reconfigure(cli: ICli, option: IAppOption, appSettings: IAppSett
       settingFile: path.resolve(option.SOURCE_DIR, appSettings.name, 'rev_' + appSettings.version, 'app.json'),
     };
 
-    // Step
+    // Step 2
     const generateAppSettings = function () {
       return new Promise((resolve, reject) => {
         cli.spinner('Step 4: Generating app settings file');
@@ -277,7 +277,7 @@ export function reconfigure(cli: ICli, option: IAppOption, appSettings: IAppSett
 
 type IPm2Command = 'start' | 'stop' | 'restart' | 'logs';
 
-export function pm2Command(cli: ICli, option: IAppOption, appSettings: IAppSettings, command: IPm2Command, commandOption?: string[]) {
+export function instance(cli: ICli, option: IAppOption, appSettings: IAppSettings, command: IPm2Command, commandOption?: string[]) {
   const buildOption = {
     name: appSettings.name,
     version: appSettings.version,
@@ -286,7 +286,6 @@ export function pm2Command(cli: ICli, option: IAppOption, appSettings: IAppSetti
     verionDir: path.resolve(option.SOURCE_DIR, appSettings.name, 'rev_' + appSettings.version),
     settingFile: path.resolve(option.SOURCE_DIR, appSettings.name, 'rev_' + appSettings.version, 'app.json'),
   };
-
 
   return new Promise((resolve, reject) => {
     pm2.connect((err) => {

@@ -70,12 +70,12 @@ function initial(cli, option) {
     router.post('/app', function (request, response) {
         try {
             var action_1 = request.body.action;
-            var appSettings = request.body.settings;
+            var appSettings = JSON.parse(request.body.settings);
             switch (action_1) {
                 case 'start':
                 case 'stop':
                 case 'restart':
-                    commands_1.pm2Command(cli, option, appSettings, action_1)
+                    commands_1.instance(cli, option, appSettings, action_1)
                         .then(function () {
                         response.json({
                             success: true,
@@ -89,6 +89,14 @@ function initial(cli, option) {
                             code: 400,
                             msg: 'invalid parameter'
                         });
+                    });
+                    break;
+                case 'configure':
+                    commands_1.reconfigure(cli, option, appSettings)
+                        .then(function () { return response.end('ok'); })
+                        .catch(function (e) {
+                        response.end('failed');
+                        console.log(e);
                     });
                     break;
             }
@@ -133,7 +141,7 @@ function initial(cli, option) {
      */
     app.post('/stop', function (req, res) {
         var appSettings = JSON.parse(req.body.settings);
-        commands_1.pm2Command(cli, option, appSettings, 'stop')
+        commands_1.instance(cli, option, appSettings, 'stop')
             .then(function () {
             res.end('Stop ok');
         })
@@ -149,7 +157,7 @@ function initial(cli, option) {
     app.post('/instance', function (req, res) {
         var appSettings = JSON.parse(req.body.settings);
         var action = req.body.action;
-        commands_1.pm2Command(cli, option, appSettings, action)
+        commands_1.instance(cli, option, appSettings, action)
             .then(function () {
             res.end(action + " ok");
         })

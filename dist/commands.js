@@ -223,7 +223,7 @@ function reconfigure(cli, option, appSettings) {
             verionDir: path.resolve(option.SOURCE_DIR, appSettings.name, 'rev_' + appSettings.version),
             settingFile: path.resolve(option.SOURCE_DIR, appSettings.name, 'rev_' + appSettings.version, 'app.json'),
         };
-        // Step
+        // Step 2
         var generateAppSettings = function () {
             return new Promise(function (resolve, reject) {
                 cli.spinner('Step 4: Generating app settings file');
@@ -263,7 +263,7 @@ function reconfigure(cli, option, appSettings) {
     });
 }
 exports.reconfigure = reconfigure;
-function pm2Command(cli, option, appSettings, command, commandOption) {
+function instance(cli, option, appSettings, command, commandOption) {
     var buildOption = {
         name: appSettings.name,
         version: appSettings.version,
@@ -324,4 +324,4 @@ function pm2Command(cli, option, appSettings, command, commandOption) {
         });
     });
 }
-exports.pm2Command = pm2Command;
+exports.instance = instance;
