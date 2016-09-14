@@ -38,3 +38,6 @@ jspm_packages
 
 # MAC files
 .DS_Store
+
+# VSCode Editor
+.vscode
